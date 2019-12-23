@@ -1,24 +1,28 @@
-# Copyright Jan Newmarch
-# Berkeley license
+# Copyright Orr Goren
 import struct
 import json
 import socket
 import re
 
-MCAST_GRP = '239.255.255.250'
-MCAST_PORT = 1982
-SRC_PORT = 8080  # my random port
-
+BULB_IP = '239.255.255.250'
+BULB_PORT = 1982
+SRC_PORT = 80
 CR_LF = "\r\n"
 
-def get_ip_port():
+Colors = {
+    'red': 16711680,
+    'blue': 255,
+    'white': 16777215
+}
+
+def createSocket():
   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
   sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
   sock.bind(('', SRC_PORT))
-  sock.sendto(("M-SEARCH * HTTP/1.1\r\n\
-  HOST: 239.255.255.250:1982\r\n\
-  MAN: \"ssdp:discover\"\r\n\
-  ST: wifi_bulb\r\n").encode(), (MCAST_GRP, MCAST_PORT))
+  sock.sendto(("M-SEARCH * HTTP/1.1" + CR_LF +
+  "HOST: 239.255.255.250:1982" + CR_LF +
+  "MAN: \"ssdp:discover\"" + CR_LF +
+  "ST: wifi_bulb" + CR_LF).encode(), (BULB_IP, BULB_PORT))
   sock.close()
 
   sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -39,106 +43,68 @@ def get_ip_port():
       return (ip, int(port))
   return (None, None)
 
-def sendto(ip, port, command):
+def sendSocket(ip, port, command):
   sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
   sock.connect((ip, port))
   sock.send((command + CR_LF).encode())
   response = sock.recv(10240)
-  #print(response)
-
-  # the response is a JSON string, parse it and return
-  # the "result" field
   dict = json.loads(response)
   sock.close()
-  # print("Response was ", response)
   return(dict["result"])
 
-def get_prop(prop, ip, port):
-  # hard code the JSON string
-  command = '{"id":1,"method":"get_prop","params":["' + prop + '"]}'
-  response = sendto(ip, port, command)
-  return response
+# def getProperty(prop, ip, port):
+#   command = '{"id":1, "method":"get_prop", "params":["' + prop + '"]}'
+#   response = sendTo(ip, port, command)
+#   return response
 
-def set_prop(prop, params, ip, port):
-  # hard code the JSON string
-  command = '{"id":1,"method":"set_' + prop +\
-            '", "params":' + params +\
-            '}'
-  # print(command)
-  response = sendto(ip, port, command)
-  return response
-
-def set_power(state, ip, port):
+def set_cmd(prop, state, ip, port):
   params = '["' + state + '", "smooth", 500]'
-  response = set_prop('power', params, ip, port)
+  command = '{"id": 1, "method": "set_' + prop + '", "params": "' + params + '"}'
+  response = sendSocket(ip, port, command)
   return response
-
-def set_rgb(state, ip, port):
-    params = '[' + str(state) + ', "smooth", 500]'
-    response = set_prop('rgb', params, ip, port)
-    return response
-
-def set_bright(state, ip, port):
-  params = '[' + str(state) + ', "smooth", 500]'
-  response = set_prop('bright', params, ip, port)
-  return response
-
-def set_hsv(hue, sat, ip, port):
-  params = '[' + str(hue) + ', ' + str(sat) + ', "smooth", 500]'
-  response = set_prop('hsv', params, ip, port)
-  return response
-
 
 if __name__ == "__main__":
 
-    Colors = {
-        'red': 16711680,
-        'blue': 255,
-        'white': 16777215
-    }
-
-    print('Starting')
-    (ip, port) = get_ip_port()
+    print('Starting App...')
+    (ip, port) = createSocket()
     if (ip, port) == (None, None):
-        print('Can\'t get address of light')
+        print('Can\'t find Yeelight bulb.')
         exit(1)
-    print('IP is ', ip, ' port is ', port)
+    print('Found Yeelight - IP:', ip, ' | Port: ', port)
 
-    # sample set commands:
-    # success = set_power("off", ip, port)
-    # print('Power set is', success[0])
-
-    # success = set_bright(90, ip, port)
-    # print('Brightness set is', success[0])
-
-    # name = set_name('Bedroom', ip, port)
-    # print('Name is ', name[0])
-
-    # sample get commands:
-    # power = get_prop("power", ip, port)
-    # print('Power is', power[0])
-
-    setHsv = set_hsv(0, 0, ip, port)
-    print("HSV IS: ", setHsv[0])
-
-    prop = input("Enter prop:")
-    while prop != '-1':
-        if prop == "on" or prop == "off":
-            success = set_power(prop, ip, port)
+    prop = input("Enter command: (to terminate send -1)")
+    while prop != "-1":
+        if "set power" in prop:
+            m = prop.split('set power ')
+            success = set_cmd('power', m[1], ip, port)
             print("Power is set to ", success[0])
         elif "set color" in prop:
             m = prop.split('set color ')
-            success = set_rgb(Colors.get(m[1]), ip, port)
-            print("Success", success[0])
+            # verify color exists, if not make white
+            if m[1] not in Colors:
+                m[1] = "white"
+            success = set_cmd('rgb', Colors.get(m[1]), ip, port)
+            print("Successfully change color to " + m[1], success[0])
         elif "set bright" in prop:
             m = prop.split('set bright ')
-            success = set_bright(m[1], ip, port)
-            print("Success", success[0])
-        success = get_prop(prop, ip, port)
-        print("Prop is ", success[0])
-        prop = input("Enter prop: ")
-
-    # getting multiple properties at once.
-    # Be careful with the quotes, words need to be separated by "," !
-    # prop_list = get_prop('power", "bright', ip, port)
-    # print("Property list is", prop_list)
+            # varify correct brightness value
+            if m[1] < 0 or m[1] > 100:
+                m[1] = 0
+            success = set_cmd('bright', m[1], ip, port)
+            print("Successfully changed brightness to " + m[1] + "%", success[0])
+        elif "set hue" in prop:
+            m = prop.split('set hue ')
+            # varify correct hue value
+            if m[1] < 0 or m[1] > 359:
+                m[1] = 0
+            success = set_cmd('hue', m[1], ip, port)
+            print("Successfully changed HUE value to " + m[1], success[0])
+        elif "set sat" in prop:
+            m = prop.split('set sat ')
+            # varify correct saturation value
+            if m[1] < 0 or m[1] > 100:
+                m[1] = 0
+            success = set_cmd('sat', m[1], ip, port)
+            print("Successfully changed SATURATION value to " + m[1], success[0])
+        prop = input("Enter command: (to terminate send -1)")
+    exit(1)
