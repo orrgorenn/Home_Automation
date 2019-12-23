@@ -48,13 +48,20 @@ All response will have the form
 
 - `"identifier": string` a globally unique identifier for this device
 - `"name": string` a friendly name for this device
-- `"device_type":string` the type of the device
-- `"controller_gateway":string` the IP address of the device
+- `"device_type": string` the type of the device
+- `"controller_gateway": string` the IP address of the device
+
+If a device with the same ideintifer already exists, it will be overwritten.
 
 **Response**
 
-- `200 OK` on success
+- `201 CREATED` on success
 
 ```json
-
+{
+    "identifier":  "floor-lamp",
+    "name": "Floor Lamp",
+    "device_type": "switch",
+    "controller_gateway": "192.168.0.2"
+}
 ```
